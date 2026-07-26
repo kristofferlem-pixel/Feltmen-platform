@@ -233,10 +233,24 @@ function writeHighscoreIfBetter(name, distance) {
 // ============================================================
 const FIREBASE_DB_URL = 'https://feltmenplatform-default-rtdb.europe-west1.firebasedatabase.app';
 
+// Firebase keys can't contain . # $ [ ] / or control chars.
+function sanitizeFirebaseKey(name) {
+  return (name || '').replace(/[.#$\[\]/]/g, '_').trim() || 'Spelare';
+}
+
 async function postScoreGlobal(name, distance) {
   try {
-    await fetch(`${FIREBASE_DB_URL}/highscores.json`, {
-      method: 'POST',
+    const key = encodeURIComponent(sanitizeFirebaseKey(name));
+    const path = `${FIREBASE_DB_URL}/highscores/${key}.json`;
+
+    // Only overwrite this player's entry if the new run beats their
+    // existing best - keeps exactly one entry per player.
+    const existingRes = await fetch(path);
+    const existing = existingRes.ok ? await existingRes.json() : null;
+    if (existing && existing.distance >= distance) return;
+
+    await fetch(path, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, distance, ts: Date.now() }),
     });
