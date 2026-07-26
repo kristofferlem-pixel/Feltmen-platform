@@ -35,29 +35,24 @@
     box-sizing: border-box;
     padding: 8px;
   }
-  #app-root:fullscreen { background: #000; }
   #game-stage {
     flex: 1 1 auto;
     min-height: 0;
+    min-width: 0;
     width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  #game-container { box-shadow: 0 0 40px rgba(0,0,0,0.5); max-width: 100%; max-height: 100%; }
+  #game-container {
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   #game-container canvas { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
-  #hint {
-    position: absolute; top: 8px; left: 8px;
-    color: #eee; font-size: 12px; z-index: 10;
-    background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 6px;
-    max-width: 78%;
-  }
-  #btn-fullscreen {
-    position: absolute; top: 8px; right: 8px; z-index: 10;
-    width: 36px; height: 36px; border-radius: 8px;
-    background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3);
-    display: flex; align-items: center; justify-content: center;
-  }
   #touch-controls {
     flex: 0 0 auto;
     width: 100%;
@@ -92,20 +87,82 @@
     white-space: pre-wrap; word-break: break-word;
   }
   #error-overlay h2 { color: #ff6b6b; margin: 0 0 10px; font-family: system-ui, sans-serif; }
-  #js-heartbeat {
-    position: fixed; bottom: 4px; right: 4px; z-index: 1001;
-    font-family: monospace; font-size: 10px; color: #555;
+  #login-screen {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 500;
+    background: #16213e;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #login-box {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 28px; max-width: 320px; width: 85%;
+  }
+  #login-box h1 { color: #fff; font-size: 22px; margin: 0 0 4px; text-align: center; }
+  #login-highscore { color: #ffe66d; font-size: 15px; margin-bottom: 4px; }
+  #leaderboard-list {
+    width: 100%; box-sizing: border-box;
+    background: rgba(255,255,255,0.06); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 4px;
+    color: #cfd8ff; font-size: 13px; text-align: left;
+    max-height: 160px; overflow-y: auto;
+  }
+  .lb-row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .lb-rank { color: #7ed957; margin-right: 8px; }
+  #username-input {
+    width: 100%; box-sizing: border-box; padding: 12px 14px;
+    border-radius: 10px; border: 2px solid rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.08); color: #fff; font-size: 16px;
+    text-align: center;
+  }
+  #username-input::placeholder { color: rgba(255,255,255,0.4); }
+  #start-btn {
+    width: 100%; padding: 14px; border-radius: 10px; border: none;
+    background: rgba(126, 217, 87, 0.85); color: #123;
+    font-size: 17px; font-weight: bold;
+  }
+  #start-btn:active { background: rgba(126, 217, 87, 1); }
+  #highscore-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 600;
+    background: rgba(10, 14, 30, 0.96);
+    align-items: center; justify-content: center;
+  }
+  #highscore-overlay-box {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 24px; max-width: 320px; width: 85%;
+  }
+  #highscore-overlay-box h2 { color: #ffe66d; margin: 0; font-size: 20px; }
+  #highscore-overlay-list {
+    width: 100%; box-sizing: border-box;
+    background: rgba(255,255,255,0.06); border-radius: 10px;
+    padding: 10px 14px;
+    color: #cfd8ff; font-size: 14px; text-align: left;
+    max-height: 300px; overflow-y: auto;
+  }
+  #highscore-close-btn {
+    width: 100%; padding: 12px; border-radius: 10px; border: none;
+    background: rgba(255,255,255,0.15); color: #fff; font-size: 15px;
   }
 </style>
 </head>
 <body>
 <div id="error-overlay"><h2>Something crashed</h2><div id="error-overlay-text"></div></div>
-<div id="js-heartbeat">js: not started</div>
+<div id="highscore-overlay">
+  <div id="highscore-overlay-box">
+    <h2>Topplista</h2>
+    <div id="highscore-overlay-list">Laddar...</div>
+    <button id="highscore-close-btn">Stäng</button>
+  </div>
+</div>
+<div id="login-screen">
+  <div id="login-box">
+    <h1>TeamGym Platformer</h1>
+    <div id="login-highscore">Highscore: -</div>
+    <div id="leaderboard-list">Laddar topplista...</div>
+    <input id="username-input" type="text" maxlength="16" placeholder="Ditt namn" autocomplete="off" autocapitalize="words">
+    <button id="start-btn">Starta</button>
+  </div>
+</div>
 <div id="app-root">
-  <div id="hint">\u2190 \u2192 r\u00f6r dig &nbsp;|&nbsp; JUMP: hoppa (extra kraft fr\u00e5n trampett) &nbsp;|&nbsp; R/\u21bb: starta om</div>
-  <button id="btn-fullscreen" aria-label="fullscreen">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </button>
   <div id="game-stage">
     <div id="game-container"></div>
   </div>
@@ -117,22 +174,167 @@
     <button id="btn-right" class="touch-btn" aria-label="right">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
-    <button id="btn-reset" class="touch-btn touch-btn-reset">\u21bb</button>
+    <button id="btn-highscore" class="touch-btn touch-btn-reset" aria-label="highscore">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M8 21h8M12 17v4M6 3h12v4a6 6 0 0 1-12 0V3zM6 5H3a3 3 0 0 0 3 3M18 5h3a3 3 0 0 1-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
   </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.80.1/phaser.min.js"></script>
 <script>
 // ============================================================
-// On-device crash + progress display: shows any uncaught error, and a
-// running status of how far setup got, directly on the page - so this
-// can be diagnosed on a phone without devtools.
+// On-device crash + progress tracking: shows any uncaught error
+// directly on the page, and keeps a running internal status of how
+// far setup got (surfaced only inside the crash report, never shown
+// during normal play) - so this can be diagnosed on a phone without
+// devtools.
 // ============================================================
+let lastHeartbeat = 'not started';
 function heartbeat(msg) {
-  const el = document.getElementById('js-heartbeat');
-  if (el) el.textContent = 'js: ' + msg;
+  lastHeartbeat = msg;
 }
 heartbeat('script tag started');
+
+// ============================================================
+// Username + local highscore, persisted in localStorage (works when
+// hosted as a real page, e.g. GitHub Pages - does not persist inside
+// Claude's own in-chat preview, which starts fresh each time).
+// ============================================================
+const HIGHSCORE_KEY = 'teamgym_highscore';
+const USERNAME_KEY = 'teamgym_username';
+
+function readHighscore() {
+  try {
+    const raw = localStorage.getItem(HIGHSCORE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function writeHighscoreIfBetter(name, distance) {
+  try {
+    const current = readHighscore();
+    if (!current || distance > current.distance) {
+      localStorage.setItem(HIGHSCORE_KEY, JSON.stringify({ name, distance }));
+      return true;
+    }
+  } catch (err) {
+    // localStorage unavailable (e.g. private browsing) - fail silently
+  }
+  return false;
+}
+
+// ============================================================
+// Global leaderboard via Firebase Realtime Database REST API - no SDK,
+// no API key needed while the database is in test mode (public
+// read/write). Every run's distance gets posted; the leaderboard shows
+// the best runs across everyone who has played.
+// ============================================================
+const FIREBASE_DB_URL = 'https://feltmenplatform-default-rtdb.europe-west1.firebasedatabase.app';
+
+async function postScoreGlobal(name, distance) {
+  try {
+    await fetch(`${FIREBASE_DB_URL}/highscores.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, distance, ts: Date.now() }),
+    });
+  } catch (err) {
+    // Offline or the database is unreachable - local highscore still works.
+  }
+}
+
+async function fetchLeaderboard(limit) {
+  const res = await fetch(`${FIREBASE_DB_URL}/highscores.json`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Firebase svarade ${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if (!data) return [];
+  return Object.values(data)
+    .sort((a, b) => b.distance - a.distance)
+    .slice(0, limit || 10);
+}
+
+function renderLeaderboard(entries, targetId) {
+  const el = document.getElementById(targetId || 'leaderboard-list');
+  if (!entries.length) {
+    el.textContent = 'Ingen p\u00e5 topplistan \u00e4nnu - bli f\u00f6rst!';
+    return;
+  }
+  el.innerHTML = entries.map((e, i) => `
+    <div class="lb-row"><span><span class="lb-rank">#${i + 1}</span>${escapeHtml(e.name)}</span><span>${e.distance}m</span></div>
+  `).join('');
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ============================================================
+// Mid-game highscore overlay (tap the trophy button) - pauses the
+// running Phaser scene while it's open.
+// ============================================================
+function toggleHighscoreOverlay() {
+  const overlay = document.getElementById('highscore-overlay');
+  const isOpen = overlay.style.display === 'flex';
+  if (isOpen) {
+    overlay.style.display = 'none';
+    if (window.__activeScene) window.__activeScene.scene.resume();
+  } else {
+    overlay.style.display = 'flex';
+    if (window.__activeScene) window.__activeScene.scene.pause();
+    document.getElementById('highscore-overlay-list').textContent = 'Laddar...';
+    fetchLeaderboard(10)
+      .then((entries) => renderLeaderboard(entries, 'highscore-overlay-list'))
+      .catch((err) => {
+        document.getElementById('highscore-overlay-list').textContent = `Kunde inte h\u00e4mta topplistan: ${err.message}`;
+      });
+  }
+}
+
+(function setupLoginScreen() {
+  const highscore = readHighscore();
+  const hsText = document.getElementById('login-highscore');
+  hsText.textContent = highscore
+    ? `Din b\u00e4sta: ${highscore.distance}m`
+    : 'Din b\u00e4sta: ingen \u00e4nnu';
+
+  fetchLeaderboard(10)
+    .then(renderLeaderboard)
+    .catch((err) => {
+      document.getElementById('leaderboard-list').textContent = `Kunde inte h\u00e4mta topplistan: ${err.message}`;
+    });
+
+  const input = document.getElementById('username-input');
+  try {
+    const savedName = localStorage.getItem(USERNAME_KEY);
+    if (savedName) input.value = savedName;
+  } catch (err) {}
+
+  document.getElementById('start-btn').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const name = (input.value || '').trim().slice(0, 16) || 'Spelare';
+    try { localStorage.setItem(USERNAME_KEY, name); } catch (err) {}
+    window.playerName = name;
+    document.getElementById('login-screen').style.display = 'none';
+    heartbeat('login submitted, booting...');
+    armBootWatchdog();
+    boot().catch((err) => {
+      showFatalError(err.message || 'boot() failed', err.stack || String(err));
+    });
+  });
+})();
+heartbeat('login screen ready');
+
+document.getElementById('highscore-close-btn').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  toggleHighscoreOverlay();
+});
 
 function showFatalError(title, detail) {
   const overlay = document.getElementById('error-overlay');
@@ -148,14 +350,18 @@ window.addEventListener('unhandledrejection', (e) => {
   showFatalError('Unhandled promise rejection', (reason && reason.stack) || String(reason));
 });
 
-// Watchdog: if the Phaser canvas hasn't appeared after a few seconds,
-// something hung without throwing a catchable error - show that too.
-setTimeout(() => {
-  const canvas = document.querySelector('#game-container canvas');
-  if (!canvas) {
-    showFatalError('Timed out waiting for the game to start', `Last status: ${document.getElementById('js-heartbeat').textContent}`);
-  }
-}, 6000);
+// Watchdog: if the Phaser canvas hasn't appeared a few seconds after
+// boot() starts, something hung without throwing a catchable error -
+// show that too. Armed from the Starta button, not at page load, since
+// boot() no longer runs until the user submits their name.
+function armBootWatchdog() {
+  setTimeout(() => {
+    const canvas = document.querySelector('#game-container canvas');
+    if (!canvas) {
+      showFatalError('Timed out waiting for the game to start', `Last status: ${lastHeartbeat}`);
+    }
+  }, 6000);
+}
 
 try {
   // ============================================================
@@ -169,35 +375,6 @@ try {
   heartbeat('selection backstop ok');
 } catch (err) {
   showFatalError('Selection backstop failed', err.stack || String(err));
-}
-
-try {
-  // ============================================================
-  // Fullscreen toggle
-  // ============================================================
-  (function setupFullscreen() {
-    const root = document.getElementById('app-root');
-    const btn = document.getElementById('btn-fullscreen');
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-      const request = root.requestFullscreen || root.webkitRequestFullscreen;
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      try {
-        if (!isFullscreen && request) {
-          request.call(root).catch(() => {});
-        } else if (isFullscreen && exit) {
-          exit.call(document);
-        }
-      } catch (err) {
-        // Fullscreen can be blocked (e.g. an embedding iframe without
-        // allow="fullscreen") - fail silently rather than break the game.
-      }
-    });
-  })();
-  heartbeat('fullscreen setup ok');
-} catch (err) {
-  showFatalError('Fullscreen setup failed', err.stack || String(err));
 }
 
 // ============================================================
@@ -220,9 +397,9 @@ try {
     e.preventDefault();
     window.touchState.jumpPressed = true;
   });
-  document.getElementById('btn-reset').addEventListener('pointerdown', (e) => {
+  document.getElementById('btn-highscore').addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    window.touchState.resetPressed = true;
+    toggleHighscoreOverlay();
   });
 })();
 heartbeat('touch controls bound');
@@ -412,6 +589,8 @@ class PlatformerScene extends Phaser.Scene {
   }
 
   create() {
+    window.__activeScene = this;
+
     if (!this.textures.exists("atlas0")) {
       this.textures.addAtlasXML("atlas0", window.__atlasAssets.img0, window.__atlasAssets.xml0);
     }
@@ -476,9 +655,21 @@ class PlatformerScene extends Phaser.Scene {
       fontSize: "15px", color: "#ffffff",
     }).setScrollFactor(0).setDepth(20);
 
+    const playerName = window.playerName || "Spelare";
+    this.add.text(20, 14, playerName, {
+      fontSize: "14px", color: "#9db4ff",
+    }).setScrollFactor(0).setDepth(20);
+
     this.distanceText = this.add.text(780, 14, "0m", {
       fontSize: "16px", color: "#ffe66d",
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+
+    const hs = (typeof readHighscore === "function") ? readHighscore() : null;
+    this.highscoreDistance = hs ? hs.distance : 0;
+    this.highscoreText = this.add.text(780, 34, `Highscore: ${this.highscoreDistance}m`, {
+      fontSize: "13px", color: "#7ed957",
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(20);
+    this.newHighscoreShown = false;
 
     // --- Input ---
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -617,7 +808,13 @@ class PlatformerScene extends Phaser.Scene {
     // --- Fell into the void ---
     if (this.playerWorldY > TUNING.fallDeathY) {
       this.gameOver = true;
-      this.statusText.setText("Fell! Press JUMP or R to try again");
+      const beatHighscore = writeHighscoreIfBetter(window.playerName || "Spelare", this.distance);
+      this.statusText.setText(beatHighscore
+        ? `Ny highscore: ${this.distance}m! Press JUMP or R to try again`
+        : "Fell! Press JUMP or R to try again");
+      if (this.distance > 0) {
+        postScoreGlobal(window.playerName || "Spelare", this.distance);
+      }
       return;
     }
 
@@ -673,6 +870,11 @@ class PlatformerScene extends Phaser.Scene {
     this.distance = Math.max(this.distance, Math.floor((this.playerWorldX - 80) / 10));
     this.distanceText.setText(`${this.distance}m`);
 
+    if (this.distance > this.highscoreDistance && !this.newHighscoreShown) {
+      this.newHighscoreShown = true;
+      this.highscoreText.setText("New highscore!").setColor("#ffe66d");
+    }
+
     while (this.rightmostX < scrollX + 1100) this.spawnNextPlatform();
     this.cleanupPlatforms(scrollX);
   }
@@ -711,36 +913,12 @@ async function boot() {
       ...buildNormalizedTextures(img1, xml1, USED_FRAME_NAMES),
     },
   };
-  heartbeat('textures built, setting reset icon...');
-
-  // Use the TwistIcon sprite (a circular-arrow icon) as the reset
-  // button's graphic instead of a text glyph.
-  const twistIconEl = xml1.querySelector('SubTexture[name="TwistIcon"]');
-  if (twistIconEl) {
-    const tx = parseFloat(twistIconEl.getAttribute("x"));
-    const ty = parseFloat(twistIconEl.getAttribute("y"));
-    const tw = parseFloat(twistIconEl.getAttribute("width"));
-    const th = parseFloat(twistIconEl.getAttribute("height"));
-    const iconCanvas = document.createElement("canvas");
-    iconCanvas.width = tw;
-    iconCanvas.height = th;
-    iconCanvas.getContext("2d").drawImage(img1, tx, ty, tw, th, 0, 0, tw, th);
-    const resetBtn = document.getElementById("btn-reset");
-    resetBtn.innerHTML = "";
-    const iconImg = document.createElement("img");
-    iconImg.src = iconCanvas.toDataURL();
-    iconImg.style.cssText = "width:30px;height:30px;pointer-events:none;";
-    resetBtn.appendChild(iconImg);
-  }
+  heartbeat('textures built...');
 
   heartbeat('starting Phaser.Game...');
   new Phaser.Game(config);
   heartbeat('Phaser.Game constructed');
 }
-
-boot().catch((err) => {
-  showFatalError(err.message || 'boot() failed', err.stack || String(err));
-});
 
 </script>
 </body>
