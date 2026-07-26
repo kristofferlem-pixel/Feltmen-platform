@@ -63,14 +63,14 @@
     touch-action: none;
     background: rgba(255,255,255,0.15);
     border: 2px solid rgba(255,255,255,0.4);
-    color: #fff; font-size: 20px; font-weight: bold;
-    width: 58px; height: 58px; border-radius: 50%;
+    color: #fff; font-size: 22px; font-weight: bold;
+    width: 72px; height: 72px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
   }
   .touch-btn:active { background: rgba(255,255,255,0.35); }
   .touch-btn svg { pointer-events: none; }
   .touch-btn-jump {
-    width: 88px; height: 58px; border-radius: 29px; font-size: 13px;
+    width: 106px; height: 72px; border-radius: 36px; font-size: 15px;
     background: rgba(126, 217, 87, 0.35); border-color: rgba(126,217,87,0.8);
   }
   .touch-btn-reset {
@@ -168,14 +168,14 @@
   </div>
   <div id="touch-controls">
     <button id="btn-left" class="touch-btn" aria-label="left">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button id="btn-jump" class="touch-btn touch-btn-jump">JUMP</button>
     <button id="btn-right" class="touch-btn" aria-label="right">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button id="btn-highscore" class="touch-btn touch-btn-reset" aria-label="highscore">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M8 21h8M12 17v4M6 3h12v4a6 6 0 0 1-12 0V3zM6 5H3a3 3 0 0 0 3 3M18 5h3a3 3 0 0 1-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M8 21h8M12 17v4M6 3h12v4a6 6 0 0 1-12 0V3zM6 5H3a3 3 0 0 0 3 3M18 5h3a3 3 0 0 1-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </div>
 </div>
@@ -546,6 +546,7 @@ const TUNING = {
   gravity: 0.55,
   airRotationSpeed: 480,    // degrees/sec - cosmetic flip when launched off a trampett
   runFrameMs: 40,           // how fast the run-cycle animation flips frames
+  twistFrameMs: 32,         // how fast the star-catch twist animation plays
   groundLevelY: 420,        // y of the very first platform
   cameraOffsetX: 250,       // player's fixed screen x; the world scrolls under them
   playerHalfWidth: 14,      // collision half-width for platform landing checks
@@ -559,6 +560,37 @@ const TUNING = {
   platformYMax: 470,        // lowest a platform can be
   trampettChance: 0.3,
   fallDeathY: 650,
+
+  // --- Difficulty ramp: gaps between platforms grow with distance ---
+  difficultyStartDistance: 500,  // meters before gaps start widening
+  difficultyGapPerMeter: 0.12,   // extra px of gap per meter beyond the start
+  difficultyMaxExtraGap: 130,    // cap so it never becomes unfair
+
+  // --- Moving platforms (start appearing after some distance) ---
+  movingPlatformUnlockDistance: 25, // meters before moving platforms can spawn
+  movingPlatformChance: 0.35,
+  movingPlatformRangeX: 90,         // px, how far a horizontal mover swings
+  movingPlatformRangeY: 65,         // px, how far a vertical mover swings
+  movingPlatformSpeed: 1.4,         // higher = faster oscillation
+
+  // --- Stamina + stars ---
+  staminaMax: 100,
+  staminaDrainPerSec: 3.5,          // gymnast gets tired over time
+  staminaPerStar: 35,
+  tiredMoveMultiplier: 0.55,        // movement/jump penalty while out of stamina
+  tiredJumpMultiplier: 0.7,
+  starChance: 0.45,                 // chance a platform also spawns a star
+  starCollectRadius: 50,            // forgiving hitbox for grabbing a star
+  starHeightMin: 140,                // px above the platform - requires a real jump
+  starHeightMax: 190,
+  spikeChance: 0.22,                 // chance a (non-trampett) platform has a spike hazard
+  spikeWideThreshold: 175,           // platforms at/above this width get 3 spikes, narrower ones get 1
+
+  // --- Momentum / slide ---
+  groundAccel: 0.35,        // how quickly you reach top speed on the ground
+  groundFriction: 0.78,     // per-frame slowdown when no direction held (grounded)
+  airAccel: 0.16,           // floatier acceleration while airborne
+  airFriction: 0.985,       // very little air friction - carries momentum/glide, more now
 };
 
 // Which atlas texture key each GymnastSprint frame lives in (they're
@@ -582,16 +614,34 @@ const POSES = {
   layout: { atlas: "atlas1", frame: "GymnastLayout", icon: { atlas: "atlas0", frame: "IconGymnastLayout" } },
 };
 
+// Standing-still pose - arms straight up, used while idle on a platform.
+const IDLE_POSE = { atlas: "atlas0", frame: "GymnastInJump0002" };
+
+// Layout-twist animation: plays when a star is caught mid-air. "First"
+// then "Second" together make one full twist. Frame 0005 of each lives
+// in atlas0, the rest in atlas1.
+const TWIST_LAYOUT_ORDER = [];
+const TWIST_LAYOUT_ATLAS = {};
+["First", "Second"].forEach((half) => {
+  for (let i = 1; i <= 11; i++) {
+    const name = `GymnastTwistLayout${half}${String(i).padStart(4, "0")}`;
+    TWIST_LAYOUT_ORDER.push(name);
+    TWIST_LAYOUT_ATLAS[name] = i === 5 ? "atlas0" : "atlas1";
+  }
+});
+
 // Only these frames get the (somewhat expensive) canvas normalization
 // pass at boot time - the atlases also contain dozens of Twist frames
 // etc. that this game doesn't use, and building those too was the
 // main cause of the slow first load.
 const USED_FRAME_NAMES = new Set([
   ...SPRINT_ORDER,
+  ...TWIST_LAYOUT_ORDER,
   "Trampett", "City", "LandingLEG",
   POSES.tucked.frame, POSES.tucked.icon.frame,
   POSES.piked.frame, POSES.piked.icon.frame,
   POSES.layout.frame, POSES.layout.icon.frame,
+  IDLE_POSE.frame,
 ]);
 
 class PlatformerScene extends Phaser.Scene {
@@ -625,6 +675,7 @@ class PlatformerScene extends Phaser.Scene {
     // --- Player state (world-space coordinates) ---
     this.playerWorldX = 80;
     this.playerWorldY = TUNING.groundLevelY;
+    this.velX = 0;
     this.velY = 0;
     this.grounded = true;
     this.currentPlatform = null;
@@ -633,8 +684,12 @@ class PlatformerScene extends Phaser.Scene {
     this.airRotation = 0;
     this.runFrameIndex = 0;
     this.runFrameTimer = 0;
+    this.starTwistActive = false;
+    this.starTwistFrameIndex = 0;
+    this.starTwistTimer = 0;
     this.distance = 0;
     this.gameOver = false;
+    this.stamina = TUNING.staminaMax;
 
     // --- Player display: a container that only ever TRANSLATES (world
     // position/feet anchor), holding a sprite that rotates around its
@@ -645,21 +700,27 @@ class PlatformerScene extends Phaser.Scene {
     this.playerContainer.add(this.playerSprite);
     this.repositionPlayerSprite();
 
-    // --- Platforms (procedurally generated ahead of the player) ---
+    // --- Platforms + stars (procedurally generated ahead of the player) ---
+    this.stars = [];
     this.platforms = [];
     this.rightmostX = 0;
     this.spawnPlatform(0, TUNING.groundLevelY, 260, false);
+    this.currentPlatform = this.platforms[0];
     while (this.rightmostX < TUNING.cameraOffsetX + 900) this.spawnNextPlatform();
 
     // --- Pose picker (fixed to the screen, not the world) ---
+    // Choose which pose the gymnast uses for a trampett-boosted flip.
     this.poseButtons = {};
     Object.keys(POSES).forEach((key, i) => {
       const icon = POSES[key].icon;
-      const btn = this.add.image(60 + i * 60, 40, ...tex(icon.atlas, icon.frame))
-        .setDisplaySize(48, 48)
+      const btn = this.add.image(60 + i * 60, 72, ...tex(icon.atlas, icon.frame))
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true })
         .setDepth(20);
+      // Scale proportionally to the icon's own native size instead of
+      // forcing a fixed width/height, which stretched non-square icons.
+      const targetSize = 44;
+      btn.setScale(targetSize / Math.max(btn.width, btn.height));
       btn.on("pointerdown", () => { this.selectedPose = key; this.updatePoseButtonHighlight(); });
       this.poseButtons[key] = btn;
     });
@@ -673,6 +734,12 @@ class PlatformerScene extends Phaser.Scene {
     this.add.text(20, 14, playerName, {
       fontSize: "14px", color: "#9db4ff",
     }).setScrollFactor(0).setDepth(20);
+
+    // --- Stamina bar ---
+    this.staminaBarBg = this.add.rectangle(20, 38, 120, 10, 0x000000, 0.4)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(20).setStrokeStyle(1, 0xffffff, 0.3);
+    this.staminaBarFill = this.add.rectangle(21, 38, 118, 8, 0xffe66d)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(21);
 
     this.distanceText = this.add.text(780, 14, "0m", {
       fontSize: "16px", color: "#ffe66d",
@@ -705,7 +772,7 @@ class PlatformerScene extends Phaser.Scene {
   }
 
   // y is the surface line the player's feet rest on.
-  spawnPlatform(x, y, width, hasTrampett) {
+  spawnPlatform(x, y, width, hasTrampett, moving, moveAxis) {
     const ground = this.add.image(x + width / 2, y + TUNING.platformThickness / 2, ...tex("atlas0", "LandingLEG"))
       .setDisplaySize(width, TUNING.platformThickness)
       .setDepth(2);
@@ -716,20 +783,65 @@ class PlatformerScene extends Phaser.Scene {
         .setScale(0.32)
         .setDepth(3);
     }
-    const platform = { x, y, width, hasTrampett, groundSprite: ground, trampettSprite };
+    const platform = {
+      x, y, width, hasTrampett, groundSprite: ground, trampettSprite,
+      moving: !!moving,
+      moveAxis: moveAxis || 'x',
+      baseX: x,
+      baseY: y,
+      phase: Math.random() * Math.PI * 2,
+      hazard: null,
+    };
     this.platforms.push(platform);
     this.rightmostX = Math.max(this.rightmostX, x + width);
+
+    // --- Spike hazard: a spot on the platform you must jump over.
+    // Narrow platforms only get a single spike - three would barely
+    // leave room to land safely. ---
+    if (x > 0 && !hasTrampett && width > 90 && Math.random() < TUNING.spikeChance) {
+      const spikeW = 22;
+      const spikeH = 26;
+      const count = width >= TUNING.spikeWideThreshold ? 3 : 1;
+      const totalW = count * spikeW;
+      const startX = x + width / 2 - totalW / 2;
+      const sprites = [];
+      for (let i = 0; i < count; i++) {
+        const cx = startX + i * spikeW + spikeW / 2;
+        const tri = this.add.triangle(cx, y - spikeH / 2, 0, spikeH, spikeW / 2, 0, spikeW, spikeH, 0xe63946)
+          .setStrokeStyle(2, 0x8a1f2b)
+          .setDepth(3);
+        sprites.push(tri);
+      }
+      platform.hazard = { xMin: startX, xMax: startX + totalW, sprites };
+    }
+
+    if (Math.random() < TUNING.starChance) {
+      const starHeight = Phaser.Math.Between(TUNING.starHeightMin, TUNING.starHeightMax);
+      const starY = y - starHeight;
+      const star = this.add.star(x + width / 2, starY, 5, 6, 13, 0xffe66d)
+        .setStrokeStyle(2, 0xffffff, 0.6)
+        .setDepth(4);
+      this.stars.push({ x: x + width / 2, y: starY, sprite: star, platform });
+    }
+
     return platform;
   }
 
   spawnNextPlatform() {
-    const gap = Phaser.Math.Between(TUNING.platformMinGap, TUNING.platformMaxGap);
+    const extraGap = Math.min(
+      TUNING.difficultyMaxExtraGap,
+      Math.max(0, this.distance - TUNING.difficultyStartDistance) * TUNING.difficultyGapPerMeter
+    );
+    const gap = Phaser.Math.Between(TUNING.platformMinGap, TUNING.platformMaxGap) + extraGap;
     const width = Phaser.Math.Between(TUNING.platformMinWidth, TUNING.platformMaxWidth);
     const lastY = this.platforms.length ? this.platforms[this.platforms.length - 1].y : TUNING.groundLevelY;
     let y = lastY + Phaser.Math.Between(-TUNING.platformMaxYStep, TUNING.platformMaxYStep);
     y = Phaser.Math.Clamp(y, TUNING.platformYMin, TUNING.platformYMax);
     const hasTrampett = Math.random() < TUNING.trampettChance;
-    this.spawnPlatform(this.rightmostX + gap, y, width, hasTrampett);
+    const canMove = this.distance >= TUNING.movingPlatformUnlockDistance && !hasTrampett;
+    const moving = canMove && Math.random() < TUNING.movingPlatformChance;
+    const moveAxis = Math.random() < 0.5 ? 'x' : 'y';
+    this.spawnPlatform(this.rightmostX + gap, y, width, hasTrampett, moving, moveAxis);
   }
 
   cleanupPlatforms(scrollX) {
@@ -738,6 +850,14 @@ class PlatformerScene extends Phaser.Scene {
       if (p.x + p.width < cutoff) {
         p.groundSprite.destroy();
         if (p.trampettSprite) p.trampettSprite.destroy();
+        if (p.hazard) p.hazard.sprites.forEach((s) => s.destroy());
+        return false;
+      }
+      return true;
+    });
+    this.stars = this.stars.filter((s) => {
+      if (s.x < cutoff) {
+        s.sprite.destroy();
         return false;
       }
       return true;
@@ -750,9 +870,26 @@ class PlatformerScene extends Phaser.Scene {
     });
   }
 
+  endRun(message) {
+    this.gameOver = true;
+    // Little upward bounce + kick away from the platform so death reads
+    // clearly instead of just freezing in place.
+    this.velY = -9;
+    this.velX = (Math.random() < 0.5 ? -1 : 1) * 90;
+    this.playerSprite.setRotation(0);
+
+    const beatHighscore = writeHighscoreIfBetter(window.playerName || "Spelare", this.distance);
+    this.statusText.setText(beatHighscore ? `Ny highscore: ${this.distance}m! ${message}` : message);
+    if (this.distance > 0) {
+      postScoreGlobal(window.playerName || "Spelare", this.distance);
+    }
+  }
+
   doJump() {
     const boosted = !!(this.currentPlatform && this.currentPlatform.hasTrampett);
-    this.velY = boosted ? TUNING.trampettJumpVelocity : TUNING.jumpVelocity;
+    const tired = this.stamina <= 0;
+    const jumpMult = tired ? TUNING.tiredJumpMultiplier : 1;
+    this.velY = (boosted ? TUNING.trampettJumpVelocity : TUNING.jumpVelocity) * jumpMult;
     this.grounded = false;
     this.currentPlatform = null;
     this.autoFlip = boosted;
@@ -765,7 +902,7 @@ class PlatformerScene extends Phaser.Scene {
     }
     // normal jumps: leave the sprite as-is - the run-cycle animation in
     // update() keeps cycling, giving a flailing/running look in the air
-    this.statusText.setText(boosted ? "Trampett boost!" : "Jump!");
+    this.statusText.setText(tired ? "Tired... find a star!" : (boosted ? "Trampett boost!" : "Jump!"));
   }
 
   update(time, delta) {
@@ -784,14 +921,37 @@ class PlatformerScene extends Phaser.Scene {
 
     if (this.gameOver) {
       if (jumpJustPressed) this.scene.restart();
+      // Let the little death-bounce keep falling/arcing away instead of
+      // freezing the gymnast in place instantly.
+      this.velY += TUNING.gravity;
+      this.playerWorldY += this.velY;
+      this.playerWorldX += this.velX * dt;
+      this.playerContainer.setPosition(this.playerWorldX, this.playerWorldY);
       return;
     }
 
-    // --- Horizontal movement ---
+    // --- Stamina: drains over time, refilled by collecting stars ---
+    this.stamina = Phaser.Math.Clamp(this.stamina - TUNING.staminaDrainPerSec * dt, 0, TUNING.staminaMax);
+    const tired = this.stamina <= 0;
+    this.staminaBarFill.setSize(118 * (this.stamina / TUNING.staminaMax), 8);
+    this.staminaBarFill.setFillStyle(tired ? 0xff6b6b : 0xffe66d);
+
+    // --- Horizontal movement (momentum-based, so speed carries into
+    // jumps and glides briefly instead of stopping instantly) ---
     let moveDir = 0;
     if (leftDown) moveDir = -1;
     else if (rightDown) moveDir = 1;
-    this.playerWorldX = Math.max(30, this.playerWorldX + moveDir * TUNING.moveSpeed * dt);
+    const moveMult = tired ? TUNING.tiredMoveMultiplier : 1;
+    const targetVelX = moveDir * TUNING.moveSpeed * moveMult;
+    if (moveDir !== 0) {
+      const accel = this.grounded ? TUNING.groundAccel : TUNING.airAccel;
+      this.velX = Phaser.Math.Linear(this.velX, targetVelX, accel);
+    } else {
+      const friction = this.grounded ? TUNING.groundFriction : TUNING.airFriction;
+      this.velX *= friction;
+      if (Math.abs(this.velX) < 4) this.velX = 0;
+    }
+    this.playerWorldX = Math.max(30, this.playerWorldX + this.velX * dt);
 
     // --- Jump input ---
     if (this.grounded && jumpJustPressed) this.doJump();
@@ -801,8 +961,89 @@ class PlatformerScene extends Phaser.Scene {
     this.velY += TUNING.gravity;
     this.playerWorldY += this.velY;
 
+    // --- Moving platforms: oscillate around their base position (either
+    // horizontally or vertically), and carry the player + any star along
+    // if they're standing on / sitting above one ---
+    this.platforms.forEach((p) => {
+      if (!p.moving) return;
+      const wave = Math.sin(time * 0.001 * TUNING.movingPlatformSpeed + p.phase);
+      let deltaX = 0;
+      let deltaY = 0;
+
+      if (p.moveAxis === 'y') {
+        const newY = p.baseY + wave * TUNING.movingPlatformRangeY;
+        deltaY = newY - p.y;
+        p.y = newY;
+        p.groundSprite.y += deltaY;
+        if (p.trampettSprite) p.trampettSprite.y += deltaY;
+      } else {
+        const newX = p.baseX + wave * TUNING.movingPlatformRangeX;
+        deltaX = newX - p.x;
+        p.x = newX;
+        p.groundSprite.x += deltaX;
+        if (p.trampettSprite) p.trampettSprite.x += deltaX;
+      }
+
+      if (p.hazard) {
+        p.hazard.xMin += deltaX;
+        p.hazard.xMax += deltaX;
+        p.hazard.sprites.forEach((s) => { s.x += deltaX; s.y += deltaY; });
+      }
+
+      if (this.grounded && this.currentPlatform === p) {
+        this.playerWorldX += deltaX;
+        this.playerWorldY += deltaY;
+      }
+      this.stars.forEach((s) => {
+        if (s.platform === p) {
+          s.x += deltaX;
+          s.y += deltaY;
+          s.sprite.x += deltaX;
+          s.sprite.y += deltaY;
+        }
+      });
+    });
+
+    // --- Star collection ---
+    this.stars = this.stars.filter((s) => {
+      const dx = this.playerWorldX - s.x;
+      const dy = this.playerWorldY - s.y;
+      if (Math.sqrt(dx * dx + dy * dy) < TUNING.starCollectRadius) {
+        this.stamina = Phaser.Math.Clamp(this.stamina + TUNING.staminaPerStar, 0, TUNING.staminaMax);
+        if (!this.grounded) {
+          this.starTwistActive = true;
+          this.starTwistFrameIndex = 0;
+          this.starTwistTimer = 0;
+          this.playerSprite.setRotation(0);
+          const firstFrame = TWIST_LAYOUT_ORDER[0];
+          this.setPlayerTexture(TWIST_LAYOUT_ATLAS[firstFrame], firstFrame, 0.4);
+        }
+        s.sprite.destroy();
+        return false;
+      }
+      return true;
+    });
+
+    // --- Stay-on-platform check (fast path): if already grounded, keep
+    // tracking the SAME platform's current position directly instead of
+    // re-scanning every platform's y each frame. This is what fixes the
+    // "falling through a moving platform" glitch - a moving platform's y
+    // can change faster than the generic landing test can catch.
+    if (this.grounded && this.currentPlatform) {
+      const p = this.currentPlatform;
+      const halfW = TUNING.playerHalfWidth;
+      const stillOn = this.playerWorldX + halfW > p.x && this.playerWorldX - halfW < p.x + p.width;
+      if (stillOn) {
+        this.playerWorldY = p.y;
+        this.velY = 0;
+      } else {
+        this.grounded = false;
+        this.currentPlatform = null;
+      }
+    }
+
     // --- Platform landing check (falling onto a platform top) ---
-    if (this.velY >= 0) {
+    if (!this.grounded && this.velY >= 0) {
       const halfW = TUNING.playerHalfWidth;
       for (const p of this.platforms) {
         const withinX = this.playerWorldX + halfW > p.x && this.playerWorldX - halfW < p.x + p.width;
@@ -813,22 +1054,27 @@ class PlatformerScene extends Phaser.Scene {
           this.currentPlatform = p;
           this.autoFlip = false;
           this.airRotation = 0;
+          this.starTwistActive = false;
           this.playerSprite.setRotation(0);
           break;
         }
       }
     }
 
+    // --- Spike hazard check (instant death, jump over it instead) ---
+    for (const p of this.platforms) {
+      if (!p.hazard) continue;
+      const nearSurface = Math.abs(this.playerWorldY - p.y) < 18;
+      const withinHazardX = this.playerWorldX > p.hazard.xMin - 6 && this.playerWorldX < p.hazard.xMax + 6;
+      if (nearSurface && withinHazardX) {
+        this.endRun("Ouch! Spikes got you - Press JUMP or R to try again");
+        return;
+      }
+    }
+
     // --- Fell into the void ---
     if (this.playerWorldY > TUNING.fallDeathY) {
-      this.gameOver = true;
-      const beatHighscore = writeHighscoreIfBetter(window.playerName || "Spelare", this.distance);
-      this.statusText.setText(beatHighscore
-        ? `Ny highscore: ${this.distance}m! Press JUMP or R to try again`
-        : "Fell! Press JUMP or R to try again");
-      if (this.distance > 0) {
-        postScoreGlobal(window.playerName || "Spelare", this.distance);
-      }
+      this.endRun("Fell! Press JUMP or R to try again");
       return;
     }
 
@@ -844,7 +1090,20 @@ class PlatformerScene extends Phaser.Scene {
           this.setPlayerTexture(SPRINT_FRAME_ATLAS[frameName], frameName, 0.35);
         }
       } else {
-        this.setPlayerTexture("atlas0", "GymnastSprint0002", 0.35);
+        this.setPlayerTexture(IDLE_POSE.atlas, IDLE_POSE.frame, 0.4);
+      }
+    } else if (this.starTwistActive) {
+      // Star caught mid-air: play the real Layout-twist frame sequence.
+      this.starTwistTimer += delta;
+      if (this.starTwistTimer > TUNING.twistFrameMs) {
+        this.starTwistTimer = 0;
+        this.starTwistFrameIndex++;
+        if (this.starTwistFrameIndex >= TWIST_LAYOUT_ORDER.length) {
+          this.starTwistActive = false;
+        } else {
+          const frameName = TWIST_LAYOUT_ORDER[this.starTwistFrameIndex];
+          this.setPlayerTexture(TWIST_LAYOUT_ATLAS[frameName], frameName, 0.4);
+        }
       }
     } else if (this.autoFlip) {
       // Trampett-boosted jump: keep the tumbling flip.
@@ -863,7 +1122,7 @@ class PlatformerScene extends Phaser.Scene {
           this.setPlayerTexture(SPRINT_FRAME_ATLAS[frameName], frameName, 0.35);
         }
       } else {
-        this.setPlayerTexture("atlas0", "GymnastSprint0002", 0.35);
+        this.setPlayerTexture(POSES.layout.atlas, POSES.layout.frame, 0.4);
       }
     }
 
