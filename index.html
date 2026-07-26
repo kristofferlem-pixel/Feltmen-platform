@@ -63,14 +63,14 @@
     touch-action: none;
     background: rgba(255,255,255,0.15);
     border: 2px solid rgba(255,255,255,0.4);
-    color: #fff; font-size: 22px; font-weight: bold;
-    width: 72px; height: 72px; border-radius: 50%;
+    color: #fff; font-size: 24px; font-weight: bold;
+    width: 88px; height: 88px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
   }
   .touch-btn:active { background: rgba(255,255,255,0.35); }
   .touch-btn svg { pointer-events: none; }
   .touch-btn-jump {
-    width: 106px; height: 72px; border-radius: 36px; font-size: 15px;
+    width: 128px; height: 88px; border-radius: 44px; font-size: 16px;
     background: rgba(126, 217, 87, 0.35); border-color: rgba(126,217,87,0.8);
   }
   .touch-btn-reset {
@@ -168,14 +168,14 @@
   </div>
   <div id="touch-controls">
     <button id="btn-left" class="touch-btn" aria-label="left">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button id="btn-jump" class="touch-btn touch-btn-jump">JUMP</button>
     <button id="btn-right" class="touch-btn" aria-label="right">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button id="btn-highscore" class="touch-btn touch-btn-reset" aria-label="highscore">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M8 21h8M12 17v4M6 3h12v4a6 6 0 0 1-12 0V3zM6 5H3a3 3 0 0 0 3 3M18 5h3a3 3 0 0 1-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M8 21h8M12 17v4M6 3h12v4a6 6 0 0 1-12 0V3zM6 5H3a3 3 0 0 0 3 3M18 5h3a3 3 0 0 1-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </div>
 </div>
@@ -580,9 +580,9 @@ const TUNING = {
   tiredMoveMultiplier: 0.55,        // movement/jump penalty while out of stamina
   tiredJumpMultiplier: 0.7,
   starChance: 0.45,                 // chance a platform also spawns a star
-  starCollectRadius: 50,            // forgiving hitbox for grabbing a star
-  starHeightMin: 140,                // px above the platform - requires a real jump
-  starHeightMax: 190,
+  starCollectRadius: 68,             // extra forgiving hitbox for grabbing a star
+  starHeightMin: 160,                 // px above the platform - a full jump, sometimes needs a trampett
+  starHeightMax: 230,
   spikeChance: 0.22,                 // chance a (non-trampett) platform has a spike hazard
   spikeWideThreshold: 175,           // platforms at/above this width get 3 spikes, narrower ones get 1
 
@@ -608,11 +608,19 @@ const SPRINT_FRAME_ATLAS = {
 };
 const SPRINT_ORDER = Object.keys(SPRINT_FRAME_ATLAS).sort();
 
+// One uniform scale for every gymnast frame (same as the run cycle).
+// Different poses naturally render at different heights because of
+// their shape (a tucked ball is shorter than a stretched layout) -
+// that's correct, not something to compensate for per-pose.
+const GYMNAST_SCALE = 0.35;
+
 const POSES = {
-  tucked: { atlas: "atlas0", frame: "GymnastTucked", icon: { atlas: "atlas0", frame: "IconGymnastTucked" } },
-  piked:  { atlas: "atlas0", frame: "GymnastPiked",  icon: { atlas: "atlas0", frame: "IconGymnastPiked" } },
-  layout: { atlas: "atlas1", frame: "GymnastLayout", icon: { atlas: "atlas0", frame: "IconGymnastLayout" } },
+  tucked: { atlas: "atlas0", frame: "GymnastTucked", icon: { atlas: "atlas0", frame: "IconGymnastTucked" }, scale: GYMNAST_SCALE },
+  piked:  { atlas: "atlas0", frame: "GymnastPiked",  icon: { atlas: "atlas0", frame: "IconGymnastPiked" },  scale: GYMNAST_SCALE, originX: 0.4 },
+  layout: { atlas: "atlas1", frame: "GymnastLayout", icon: { atlas: "atlas0", frame: "IconGymnastLayout" }, scale: GYMNAST_SCALE },
 };
+
+const TWIST_SCALE = GYMNAST_SCALE;
 
 // Standing-still pose - arms straight up, used while idle on a platform.
 const IDLE_POSE = { atlas: "atlas0", frame: "GymnastInJump0002" };
@@ -696,7 +704,7 @@ class PlatformerScene extends Phaser.Scene {
     // own center. This keeps the rotation pivot at the gymnast's
     // center regardless of where their feet/ground anchor is. ---
     this.playerContainer = this.add.container(TUNING.cameraOffsetX, this.playerWorldY).setDepth(10);
-    this.playerSprite = this.add.image(0, 0, ...tex("atlas0", "GymnastSprint0002")).setScale(0.35);
+    this.playerSprite = this.add.image(0, 0, ...tex("atlas0", "GymnastSprint0002")).setScale(GYMNAST_SCALE);
     this.playerContainer.add(this.playerSprite);
     this.repositionPlayerSprite();
 
@@ -758,15 +766,17 @@ class PlatformerScene extends Phaser.Scene {
     this.resetKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
   }
 
-  // Keeps the sprite's own center as its rotation pivot, while its
+  // Keeps the sprite's own pivot as its rotation point, while its
   // bottom edge stays lined up with the container's y=0 (the
-  // player's feet / ground-contact point).
+  // player's feet / ground-contact point). Origin Y always stays 0.5
+  // for this to work; only X ever needs adjusting per-pose.
   repositionPlayerSprite() {
     this.playerSprite.y = -this.playerSprite.displayHeight / 2;
   }
 
-  setPlayerTexture(atlasKey, frameName, scale) {
+  setPlayerTexture(atlasKey, frameName, scale, originX) {
     this.playerSprite.setTexture(...tex(atlasKey, frameName));
+    this.playerSprite.setOrigin(originX === undefined ? 0.5 : originX, 0.5);
     if (scale) this.playerSprite.setScale(scale);
     this.repositionPlayerSprite();
   }
@@ -898,7 +908,7 @@ class PlatformerScene extends Phaser.Scene {
 
     if (boosted) {
       const pose = POSES[this.selectedPose];
-      this.setPlayerTexture(pose.atlas, pose.frame, 0.4);
+      this.setPlayerTexture(pose.atlas, pose.frame, pose.scale, pose.originX);
     }
     // normal jumps: leave the sprite as-is - the run-cycle animation in
     // update() keeps cycling, giving a flailing/running look in the air
@@ -1016,7 +1026,7 @@ class PlatformerScene extends Phaser.Scene {
           this.starTwistTimer = 0;
           this.playerSprite.setRotation(0);
           const firstFrame = TWIST_LAYOUT_ORDER[0];
-          this.setPlayerTexture(TWIST_LAYOUT_ATLAS[firstFrame], firstFrame, 0.4);
+          this.setPlayerTexture(TWIST_LAYOUT_ATLAS[firstFrame], firstFrame, TWIST_SCALE);
         }
         s.sprite.destroy();
         return false;
@@ -1087,10 +1097,10 @@ class PlatformerScene extends Phaser.Scene {
           this.runFrameTimer = 0;
           this.runFrameIndex = (this.runFrameIndex + 1) % SPRINT_ORDER.length;
           const frameName = SPRINT_ORDER[this.runFrameIndex];
-          this.setPlayerTexture(SPRINT_FRAME_ATLAS[frameName], frameName, 0.35);
+          this.setPlayerTexture(SPRINT_FRAME_ATLAS[frameName], frameName, GYMNAST_SCALE);
         }
       } else {
-        this.setPlayerTexture(IDLE_POSE.atlas, IDLE_POSE.frame, 0.4);
+        this.setPlayerTexture(IDLE_POSE.atlas, IDLE_POSE.frame, GYMNAST_SCALE);
       }
     } else if (this.starTwistActive) {
       // Star caught mid-air: play the real Layout-twist frame sequence.
@@ -1102,7 +1112,7 @@ class PlatformerScene extends Phaser.Scene {
           this.starTwistActive = false;
         } else {
           const frameName = TWIST_LAYOUT_ORDER[this.starTwistFrameIndex];
-          this.setPlayerTexture(TWIST_LAYOUT_ATLAS[frameName], frameName, 0.4);
+          this.setPlayerTexture(TWIST_LAYOUT_ATLAS[frameName], frameName, TWIST_SCALE);
         }
       }
     } else if (this.autoFlip) {
@@ -1119,10 +1129,10 @@ class PlatformerScene extends Phaser.Scene {
           this.runFrameTimer = 0;
           this.runFrameIndex = (this.runFrameIndex + 1) % SPRINT_ORDER.length;
           const frameName = SPRINT_ORDER[this.runFrameIndex];
-          this.setPlayerTexture(SPRINT_FRAME_ATLAS[frameName], frameName, 0.35);
+          this.setPlayerTexture(SPRINT_FRAME_ATLAS[frameName], frameName, GYMNAST_SCALE);
         }
       } else {
-        this.setPlayerTexture(POSES.layout.atlas, POSES.layout.frame, 0.4);
+        this.setPlayerTexture(POSES.layout.atlas, POSES.layout.frame, POSES.layout.scale);
       }
     }
 
