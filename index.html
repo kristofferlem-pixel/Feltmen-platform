@@ -98,12 +98,20 @@
   }
   #login-box h1 { color: #fff; font-size: 22px; margin: 0 0 4px; text-align: center; }
   #login-highscore { color: #ffe66d; font-size: 15px; margin-bottom: 4px; }
+  .lb-tabs { display: flex; gap: 6px; width: 100%; }
+  .lb-tab {
+    flex: 1; padding: 7px 0; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);
+    background: transparent; color: rgba(255,255,255,0.6); font-size: 12px;
+  }
+  .lb-tab-active {
+    background: rgba(126, 217, 87, 0.25); border-color: rgba(126,217,87,0.7); color: #fff;
+  }
   #leaderboard-list {
     width: 100%; box-sizing: border-box;
     background: rgba(255,255,255,0.06); border-radius: 10px;
     padding: 10px 14px; margin-bottom: 4px;
     color: #cfd8ff; font-size: 13px; text-align: left;
-    max-height: 160px; overflow-y: auto;
+    max-height: 220px; overflow-y: auto;
   }
   .lb-row { display: flex; justify-content: space-between; padding: 2px 0; }
   .lb-rank { color: #7ed957; margin-right: 8px; }
@@ -114,6 +122,10 @@
     text-align: center;
   }
   #username-input::placeholder { color: rgba(255,255,255,0.4); }
+  #username-error {
+    display: none;
+    color: #ff8a8a; font-size: 12px; margin-top: -6px;
+  }
   #start-btn {
     width: 100%; padding: 14px; border-radius: 10px; border: none;
     background: rgba(126, 217, 87, 0.85); color: #123;
@@ -136,7 +148,7 @@
     background: rgba(255,255,255,0.06); border-radius: 10px;
     padding: 10px 14px;
     color: #cfd8ff; font-size: 14px; text-align: left;
-    max-height: 300px; overflow-y: auto;
+    max-height: 360px; overflow-y: auto;
   }
   #highscore-close-btn {
     width: 100%; padding: 12px; border-radius: 10px; border: none;
@@ -149,6 +161,10 @@
 <div id="highscore-overlay">
   <div id="highscore-overlay-box">
     <h2>Topplista</h2>
+    <div class="lb-tabs">
+      <button id="overlay-tab-all" class="lb-tab lb-tab-active">Alla tider</button>
+      <button id="overlay-tab-today" class="lb-tab">Idag</button>
+    </div>
     <div id="highscore-overlay-list">Laddar...</div>
     <button id="highscore-close-btn">Stäng</button>
   </div>
@@ -157,8 +173,13 @@
   <div id="login-box">
     <h1>TeamGym Platformer</h1>
     <div id="login-highscore">Highscore: -</div>
+    <div class="lb-tabs">
+      <button id="login-tab-all" class="lb-tab lb-tab-active">Alla tider</button>
+      <button id="login-tab-today" class="lb-tab">Idag</button>
+    </div>
     <div id="leaderboard-list">Laddar topplista...</div>
-    <input id="username-input" type="text" maxlength="16" placeholder="Ditt namn" autocomplete="off" autocapitalize="words">
+    <input id="username-input" type="text" maxlength="16" placeholder="Välj ett namn" autocomplete="off" autocapitalize="words">
+    <div id="username-error">Ange ett namn för att starta</div>
     <button id="start-btn">Starta</button>
   </div>
 </div>
@@ -238,28 +259,39 @@ function sanitizeFirebaseKey(name) {
   return (name || '').replace(/[.#$\[\]/]/g, '_').trim() || 'Spelare';
 }
 
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+async function saveIfBetter(path, name, distance) {
+  const res = await fetch(path);
+  const existing = res.ok ? await res.json() : null;
+  if (existing && existing.distance >= distance) return;
+  await fetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, distance, ts: Date.now() }),
+  });
+}
+
 async function postScoreGlobal(name, distance) {
   try {
     const key = encodeURIComponent(sanitizeFirebaseKey(name));
-    const path = `${FIREBASE_DB_URL}/highscores/${key}.json`;
-
-    // Only overwrite this player's entry if the new run beats their
-    // existing best - keeps exactly one entry per player.
-    const existingRes = await fetch(path);
-    const existing = existingRes.ok ? await existingRes.json() : null;
-    if (existing && existing.distance >= distance) return;
-
-    await fetch(path, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, distance, ts: Date.now() }),
-    });
+    // Two separate records per player: their all-time best, and their
+    // best for today specifically - each only overwritten when beaten.
+    await Promise.all([
+      saveIfBetter(`${FIREBASE_DB_URL}/highscores/${key}.json`, name, distance),
+      saveIfBetter(`${FIREBASE_DB_URL}/dailyHighscores/${todayKey()}/${key}.json`, name, distance),
+    ]);
   } catch (err) {
     // Offline or the database is unreachable - local highscore still works.
   }
 }
 
-async function fetchLeaderboard(limit) {
+const LEADERBOARD_LIMIT = 20;
+
+async function fetchLeaderboard() {
   const res = await fetch(`${FIREBASE_DB_URL}/highscores.json`);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
@@ -267,9 +299,18 @@ async function fetchLeaderboard(limit) {
   }
   const data = await res.json();
   if (!data) return [];
-  return Object.values(data)
-    .sort((a, b) => b.distance - a.distance)
-    .slice(0, limit || 10);
+  return Object.values(data).sort((a, b) => b.distance - a.distance);
+}
+
+async function fetchDailyLeaderboard() {
+  const res = await fetch(`${FIREBASE_DB_URL}/dailyHighscores/${todayKey()}.json`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Firebase svarade ${res.status} ${res.statusText}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if (!data) return [];
+  return Object.values(data).sort((a, b) => b.distance - a.distance);
 }
 
 function renderLeaderboard(entries, targetId) {
@@ -289,10 +330,51 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+// Wires up an "All-time" / "Today" tab pair for one leaderboard list.
+// Fetches once, then filters/re-renders locally on tab switch (no
+// re-fetch needed). Returns { load } - call load() to fetch + render.
+function setupLeaderboardWidget(listId, tabAllId, tabTodayId) {
+  let allEntries = [];
+  let todayEntries = [];
+  let mode = 'all';
+  const listEl = document.getElementById(listId);
+  const tabAll = document.getElementById(tabAllId);
+  const tabToday = document.getElementById(tabTodayId);
+
+  function render() {
+    const source = mode === 'today' ? todayEntries : allEntries;
+    renderLeaderboard(source.slice(0, LEADERBOARD_LIMIT), listId);
+  }
+
+  function setMode(newMode) {
+    mode = newMode;
+    tabAll.classList.toggle('lb-tab-active', mode === 'all');
+    tabToday.classList.toggle('lb-tab-active', mode === 'today');
+    render();
+  }
+
+  tabAll.addEventListener('pointerdown', (e) => { e.preventDefault(); setMode('all'); });
+  tabToday.addEventListener('pointerdown', (e) => { e.preventDefault(); setMode('today'); });
+
+  return {
+    load: async () => {
+      listEl.textContent = 'Laddar...';
+      try {
+        [allEntries, todayEntries] = await Promise.all([fetchLeaderboard(), fetchDailyLeaderboard()]);
+        render();
+      } catch (err) {
+        listEl.textContent = `Kunde inte h\u00e4mta topplistan: ${err.message}`;
+      }
+    },
+  };
+}
+
 // ============================================================
 // Mid-game highscore overlay (tap the trophy button) - pauses the
 // running Phaser scene while it's open.
 // ============================================================
+const overlayLeaderboard = setupLeaderboardWidget('highscore-overlay-list', 'overlay-tab-all', 'overlay-tab-today');
+
 function toggleHighscoreOverlay() {
   const overlay = document.getElementById('highscore-overlay');
   const isOpen = overlay.style.display === 'flex';
@@ -302,14 +384,11 @@ function toggleHighscoreOverlay() {
   } else {
     overlay.style.display = 'flex';
     if (window.__activeScene) window.__activeScene.scene.pause();
-    document.getElementById('highscore-overlay-list').textContent = 'Laddar...';
-    fetchLeaderboard(10)
-      .then((entries) => renderLeaderboard(entries, 'highscore-overlay-list'))
-      .catch((err) => {
-        document.getElementById('highscore-overlay-list').textContent = `Kunde inte h\u00e4mta topplistan: ${err.message}`;
-      });
+    overlayLeaderboard.load();
   }
 }
+
+const loginLeaderboard = setupLeaderboardWidget('leaderboard-list', 'login-tab-all', 'login-tab-today');
 
 (function setupLoginScreen() {
   const highscore = readHighscore();
@@ -318,21 +397,27 @@ function toggleHighscoreOverlay() {
     ? `Din b\u00e4sta: ${highscore.distance}m`
     : 'Din b\u00e4sta: ingen \u00e4nnu';
 
-  fetchLeaderboard(10)
-    .then(renderLeaderboard)
-    .catch((err) => {
-      document.getElementById('leaderboard-list').textContent = `Kunde inte h\u00e4mta topplistan: ${err.message}`;
-    });
+  loginLeaderboard.load();
 
   const input = document.getElementById('username-input');
+  input.addEventListener('input', () => {
+    if (input.value.trim()) document.getElementById('username-error').style.display = 'none';
+  });
   try {
     const savedName = localStorage.getItem(USERNAME_KEY);
-    if (savedName) input.value = savedName;
+    if (savedName && savedName !== 'Spelare') input.value = savedName;
   } catch (err) {}
 
   document.getElementById('start-btn').addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    const name = (input.value || '').trim().slice(0, 16) || 'Spelare';
+    const name = (input.value || '').trim().slice(0, 16);
+    const errorEl = document.getElementById('username-error');
+    if (!name) {
+      errorEl.style.display = 'block';
+      input.focus();
+      return;
+    }
+    errorEl.style.display = 'none';
     try { localStorage.setItem(USERNAME_KEY, name); } catch (err) {}
     window.playerName = name;
     document.getElementById('login-screen').style.display = 'none';
@@ -616,7 +701,7 @@ const GYMNAST_SCALE = 0.35;
 
 const POSES = {
   tucked: { atlas: "atlas0", frame: "GymnastTucked", icon: { atlas: "atlas0", frame: "IconGymnastTucked" }, scale: GYMNAST_SCALE },
-  piked:  { atlas: "atlas0", frame: "GymnastPiked",  icon: { atlas: "atlas0", frame: "IconGymnastPiked" },  scale: GYMNAST_SCALE, originX: 0.4 },
+  piked:  { atlas: "atlas0", frame: "GymnastPiked",  icon: { atlas: "atlas0", frame: "IconGymnastPiked" },  scale: GYMNAST_SCALE, originX: 0.3 },
   layout: { atlas: "atlas1", frame: "GymnastLayout", icon: { atlas: "atlas0", frame: "IconGymnastLayout" }, scale: GYMNAST_SCALE },
 };
 
