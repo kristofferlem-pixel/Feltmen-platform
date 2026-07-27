@@ -44,6 +44,23 @@
     align-items: center;
     justify-content: center;
   }
+  #btn-haaland {
+    display: none;
+    position: absolute; top: 8px; right: 8px; z-index: 10;
+    width: auto; height: 34px; padding: 0 14px; border-radius: 17px;
+    background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3);
+    color: #fff; font-weight: bold; font-size: 13px;
+    align-items: center; justify-content: center;
+  }
+  #btn-haaland.active {
+    background: rgba(126, 217, 87, 0.5); border-color: rgba(126,217,87,0.9);
+  }
+  #btn-haaland.blinking {
+    animation: haaland-blink 0.5s step-start infinite;
+  }
+  @keyframes haaland-blink {
+    50% { opacity: 0.25; }
+  }
   #game-container {
     box-shadow: 0 0 40px rgba(0,0,0,0.5);
     width: 100%;
@@ -184,6 +201,7 @@
   </div>
 </div>
 <div id="app-root">
+  <button id="btn-haaland" aria-label="haaland mode">Haaland</button>
   <div id="game-stage">
     <div id="game-container"></div>
   </div>
@@ -476,6 +494,19 @@ try {
   showFatalError('Selection backstop failed', err.stack || String(err));
 }
 
+try {
+  window.__haalandMode = false;
+  document.getElementById('btn-haaland').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const scene = window.__activeScene;
+    if (scene && scene.haalandUnlocked && !scene.haalandActive) {
+      scene.activateHaaland();
+    }
+  });
+} catch (err) {
+  showFatalError('Haaland toggle setup failed', err.stack || String(err));
+}
+
 // ============================================================
 // Shared touch + keyboard input state
 // ============================================================
@@ -615,10 +646,74 @@ function buildNormalizedTextures(img, xmlDoc, usedNames) {
 // calls, transparently substituting a rotation-fixed standalone texture
 // when one exists for that frame name.
 function tex(atlasKey, frameName) {
+  if (window.__haalandMode && window.__haalandTextures && window.__haalandTextures[frameName]) {
+    return [`${frameName}_haaland`];
+  }
   if (window.__atlasAssets.rotatedOverrides[frameName]) {
     return [frameName];
   }
   return [atlasKey, frameName];
+}
+
+// ============================================================
+// "Haaland mode" - a crude procedural gag effect: takes an existing
+// gymnast frame and stretches the head/neck forward, inspired by the
+// footballer's famous neck-forward running posture. This is a canvas
+// transform on our own sprite art, not a real depiction of him - just
+// a distortion effect borrowing a well-known meme silhouette. Blind
+// first pass (can't preview the actual result) - tune the numbers
+// below based on how it actually looks once tested.
+// ============================================================
+const HAALAND_HEAD_BAND_FRACTION = 0.16; // top % of the frame treated as "head"
+const HAALAND_FORWARD_OFFSET = 62;       // px the head shifts forward
+
+function applyHaalandNeck(sourceCanvas) {
+  const w = sourceCanvas.width;
+  const h = sourceCanvas.height;
+  const headBandH = Math.round(h * HAALAND_HEAD_BAND_FRACTION);
+  const offset = HAALAND_FORWARD_OFFSET;
+  const out = document.createElement("canvas");
+  out.width = w + offset;
+  out.height = h;
+  const ctx = out.getContext("2d");
+
+  // Body (everything below the head band) stays exactly where it was.
+  ctx.drawImage(sourceCanvas, 0, headBandH, w, h - headBandH, 0, headBandH, w, h - headBandH);
+
+  // Neck: several thin interpolated slices, each shifted a bit further
+  // forward than the last, giving a crude stretched-diagonal look.
+  const neckSliceH = Math.max(3, Math.round(headBandH * 0.35));
+  const neckY = headBandH - neckSliceH;
+  const slices = 12;
+  for (let i = 0; i < slices; i++) {
+    const t = i / (slices - 1);
+    const sliceH = neckSliceH / slices;
+    const sy = neckY + sliceH * i;
+    const dx = offset * t;
+    ctx.drawImage(sourceCanvas, 0, sy, w, sliceH, dx, sy, w, sliceH);
+  }
+
+  // Head: shifted all the way forward.
+  ctx.drawImage(sourceCanvas, 0, 0, w, headBandH, offset, 0, w, headBandH);
+
+  return out;
+}
+
+// Builds Haaland-mode variants for a texture manager, for a given set
+// of frame names already registered as normal textures.
+function buildHaalandTextures(scene, frameNames) {
+  const built = {};
+  frameNames.forEach((name) => {
+    if (!scene.textures.exists(name)) return;
+    const source = scene.textures.get(name).getSourceImage();
+    const stretched = applyHaalandNeck(source);
+    const key = `${name}_haaland`;
+    if (!scene.textures.exists(key)) scene.textures.addCanvas(key, stretched);
+    // Origin needed to keep the body (not the stretched neck) centered
+    // on rotation/positioning - see setPlayerTexture's originX param.
+    built[name] = { originX: (source.width / 2) / stretched.width };
+  });
+  return built;
 }
 
 // ============================================================
@@ -628,6 +723,11 @@ const TUNING = {
   moveSpeed: 310,           // px/s left-right movement (grounded and air)
   jumpVelocity: -13,        // normal jump strength
   trampettJumpVelocity: -21,// boosted jump strength when launching from a Trampett platform
+  haalandDurationMs: 7000,          // total power-up duration
+  haalandBlinkDurationMs: 5000,     // how long the button blinks before going solid for the remaining time
+  haalandSpeedMultiplier: 3,        // move speed multiplier while active
+  haalandStarThresholds: [10, 20, 40, 80], // cumulative stars needed to unlock each use
+  haalandBounceVelocity: -28,       // bounce strength when hitting the floor while active (doubled - needs enough height to reach a platform again once the power-up ends)
   gravity: 0.55,
   airRotationSpeed: 480,    // degrees/sec - cosmetic flip when launched off a trampett
   runFrameMs: 40,           // how fast the run-cycle animation flips frames
@@ -760,6 +860,10 @@ class PlatformerScene extends Phaser.Scene {
       if (!this.textures.exists(name)) this.textures.addCanvas(name, canvas);
     });
 
+    if (!window.__haalandTextures) {
+      window.__haalandTextures = buildHaalandTextures(this, [...SPRINT_ORDER]);
+    }
+
     // --- Background: tiles infinitely and scrolls at a fraction of the
     // camera speed (parallax depth). tilePositionY is never touched, so
     // it stays locked to its base level even during vertical camera
@@ -785,6 +889,18 @@ class PlatformerScene extends Phaser.Scene {
     this.distance = 0;
     this.gameOver = false;
     this.stamina = TUNING.staminaMax;
+
+    // --- Haaland power-up: unlocks at cumulative star-collection
+    // thresholds, resets each run ---
+    this.starsCollected = 0;
+    this.haalandTierIndex = 0;
+    this.haalandUnlocked = false;
+    this.haalandActive = false;
+    this.haalandTimer = 0;
+    const haalandBtn = document.getElementById('btn-haaland');
+    haalandBtn.style.display = 'none';
+    haalandBtn.classList.remove('active', 'blinking');
+    this.checkHaalandUnlock();
 
     // --- Player display: a container that only ever TRANSLATES (world
     // position/feet anchor), holding a sprite that rotates around its
@@ -863,7 +979,11 @@ class PlatformerScene extends Phaser.Scene {
 
   setPlayerTexture(atlasKey, frameName, scale, originX) {
     this.playerSprite.setTexture(...tex(atlasKey, frameName));
-    this.playerSprite.setOrigin(originX === undefined ? 0.5 : originX, 0.5);
+    let finalOriginX = originX === undefined ? 0.5 : originX;
+    if (window.__haalandMode && window.__haalandTextures && window.__haalandTextures[frameName]) {
+      finalOriginX = window.__haalandTextures[frameName].originX;
+    }
+    this.playerSprite.setOrigin(finalOriginX, 0.5);
     if (scale) this.playerSprite.setScale(scale);
     this.repositionPlayerSprite();
   }
@@ -967,6 +1087,26 @@ class PlatformerScene extends Phaser.Scene {
     });
   }
 
+  checkHaalandUnlock() {
+    if (this.haalandUnlocked || this.haalandActive) return;
+    const thresholds = TUNING.haalandStarThresholds;
+    if (this.haalandTierIndex >= thresholds.length) return;
+    if (this.starsCollected >= thresholds[this.haalandTierIndex]) {
+      this.haalandUnlocked = true;
+      document.getElementById('btn-haaland').style.display = 'flex';
+    }
+  }
+
+  activateHaaland() {
+    this.haalandActive = true;
+    this.haalandUnlocked = false;
+    this.haalandTierIndex++;
+    this.haalandTimer = TUNING.haalandDurationMs;
+    window.__haalandMode = true;
+    const btn = document.getElementById('btn-haaland');
+    btn.classList.add('active', 'blinking');
+  }
+
   endRun(message) {
     this.gameOver = true;
     // Little upward bounce + kick away from the platform so death reads
@@ -1033,12 +1173,28 @@ class PlatformerScene extends Phaser.Scene {
     this.staminaBarFill.setSize(118 * (this.stamina / TUNING.staminaMax), 8);
     this.staminaBarFill.setFillStyle(tired ? 0xff6b6b : 0xffe66d);
 
+    // --- Haaland power-up countdown ---
+    if (this.haalandActive) {
+      this.haalandTimer -= delta;
+      const remaining = TUNING.haalandDurationMs - TUNING.haalandBlinkDurationMs;
+      if (this.haalandTimer <= remaining) {
+        document.getElementById('btn-haaland').classList.remove('blinking');
+      }
+      if (this.haalandTimer <= 0) {
+        this.haalandActive = false;
+        window.__haalandMode = false;
+        const btn = document.getElementById('btn-haaland');
+        btn.classList.remove('active', 'blinking');
+        btn.style.display = 'none';
+      }
+    }
+
     // --- Horizontal movement (momentum-based, so speed carries into
     // jumps and glides briefly instead of stopping instantly) ---
     let moveDir = 0;
     if (leftDown) moveDir = -1;
     else if (rightDown) moveDir = 1;
-    const moveMult = tired ? TUNING.tiredMoveMultiplier : 1;
+    const moveMult = this.haalandActive ? TUNING.haalandSpeedMultiplier : (tired ? TUNING.tiredMoveMultiplier : 1);
     const targetVelX = moveDir * TUNING.moveSpeed * moveMult;
     if (moveDir !== 0) {
       const accel = this.grounded ? TUNING.groundAccel : TUNING.airAccel;
@@ -1121,6 +1277,8 @@ class PlatformerScene extends Phaser.Scene {
       const dy = this.playerWorldY - s.y;
       if (Math.sqrt(dx * dx + dy * dy) < TUNING.starCollectRadius) {
         this.stamina = Phaser.Math.Clamp(this.stamina + TUNING.staminaPerStar, 0, TUNING.staminaMax);
+        this.starsCollected++;
+        this.checkHaalandUnlock();
         if (!this.grounded) {
           this.starTwistActive = true;
           this.starTwistFrameIndex = 0;
@@ -1173,21 +1331,29 @@ class PlatformerScene extends Phaser.Scene {
     }
 
     // --- Spike hazard check (instant death, jump over it instead) ---
-    for (const p of this.platforms) {
-      if (!p.hazard) continue;
-      if (p.hazard.extension < TUNING.spikeDangerThreshold) continue; // retracted - safe
-      const nearSurface = Math.abs(this.playerWorldY - p.y) < 18;
-      const withinHazardX = this.playerWorldX > p.hazard.xMin - 6 && this.playerWorldX < p.hazard.xMax + 6;
-      if (nearSurface && withinHazardX) {
-        this.endRun("Ouch! Spikes got you - Press JUMP or R to try again");
-        return;
+    if (!this.haalandActive) {
+      for (const p of this.platforms) {
+        if (!p.hazard) continue;
+        if (p.hazard.extension < TUNING.spikeDangerThreshold) continue; // retracted - safe
+        const nearSurface = Math.abs(this.playerWorldY - p.y) < 18;
+        const withinHazardX = this.playerWorldX > p.hazard.xMin - 6 && this.playerWorldX < p.hazard.xMax + 6;
+        if (nearSurface && withinHazardX) {
+          this.endRun("Ouch! Spikes got you - Press JUMP or R to try again");
+          return;
+        }
       }
     }
 
     // --- Fell into the void ---
     if (this.playerWorldY > TUNING.fallDeathY) {
-      this.endRun("Fell! Press JUMP or R to try again");
-      return;
+      if (this.haalandActive) {
+        // Invincible: bounce off the bottom of the play area instead of dying.
+        this.playerWorldY = TUNING.fallDeathY;
+        this.velY = TUNING.haalandBounceVelocity;
+      } else {
+        this.endRun("Fell! Press JUMP or R to try again");
+        return;
+      }
     }
 
     // --- Animate / rotate ---
